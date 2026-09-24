@@ -1,0 +1,142 @@
+diff --git a/models/crapcn.py b/models/crapcn.py
+index 5f0d0d7..fd4a316 100644
+--- a/models/crapcn.py
++++ b/models/crapcn.py
+@@ -4,21 +4,23 @@ import copy
+ import math
+ import numpy as np
+ from torch import nn, einsum
+-from pointnet2_ops.pointnet2_utils import furthest_point_sample, gather_operation, ball_query, three_nn, three_interpolate, grouping_operation
++from hpitd.point_ops import furthest_point_sample, gather_operation, ball_query, three_nn, three_interpolate, grouping_operation
+ import torch.nn.functional as F
+ from torch import einsum
+ from models.utils import PointNet_SA_Module_KNN, MLP_Res, MLP_CONV, fps_subsample, query_knn, grouping_operation, get_nearest_index, indexing_neighbor
+ 
++HPITD_COMPATIBILITY_PATCH = 1
++
+ # VA from Point Transformer
+ class VectorAttention(nn.Module):
+-    def __init__(self, in_channel = 128, dim = 64, n_knn = 16, attn_hidden_multiplier = 4):
++    def __init__(self, in_channel = 128, dim = 64, n_knn = 16, attn_hidden_multiplier = 4, space_dim = 3):
+         super().__init__()
+         self.n_knn = n_knn
+         self.conv_key = nn.Conv1d(in_channel, dim, 1)
+         self.conv_query = nn.Conv1d(in_channel, dim, 1)
+         self.conv_value = nn.Conv1d(in_channel, dim, 1)
+         self.pos_mlp = nn.Sequential(
+-            nn.Conv2d(3, dim, 1),
++            nn.Conv2d(space_dim, dim, 1),
+             nn.BatchNorm2d(dim),
+             nn.ReLU(),
+             nn.Conv2d(dim, dim, 1)
+@@ -31,7 +33,7 @@ class VectorAttention(nn.Module):
+         )
+         self.conv_end = nn.Conv1d(dim, in_channel, 1)
+ 
+-    def forward(self, query, support):
++    def forward(self, query, support, num_groups = None):
+         pq, fq = query
+         ps, fs = support
+ 
+@@ -42,7 +44,16 @@ class VectorAttention(nn.Module):
+ 
+         pos_flipped_1 = ps.permute(0, 2, 1).contiguous() 
+         pos_flipped_2 = pq.permute(0, 2, 1).contiguous() 
+-        idx_knn = query_knn(self.n_knn, pos_flipped_1, pos_flipped_2)
++        if num_groups is not None:
++            representative_indices = torch.arange(
++                0, B, num_groups, device=pq.device
++            )
++            idx_knn_representative = query_knn(
++                self.n_knn, pos_flipped_1[representative_indices], pos_flipped_2[representative_indices]
++            )
++            idx_knn = idx_knn_representative.repeat_interleave(num_groups, dim=0)
++        else:
++            idx_knn = query_knn(self.n_knn, pos_flipped_1, pos_flipped_2)
+ 
+         key = grouping_operation(key, idx_knn) 
+         qk_rel = query.reshape((B, -1, N, 1)) - key  
+@@ -72,37 +83,39 @@ def hierarchical_fps(pts, rates):
+             fps_idxs.append(furthest_point_sample(pts_flipped, now))
+     return fps_idxs
+ 
+-# project f from p1 onto p2
+ def three_inter(f, p1, p2):
+-    # print(f.shape, p1.shape, p2.shape)
+-    # p1_flipped = p1.permute(0, 2, 1).contiguous()
+-    # p2_flipped = p2.permute(0, 2, 1).contiguous()
+-    idx, dis = get_nearest_index(p2, p1, k=3, return_dis=True) 
+-    dist_recip = 1.0 / (dis + 1e-8)
+-    norm = torch.sum(dist_recip, dim = 2, keepdim = True) 
+-    weight = dist_recip / norm
+-    proj_f = torch.sum(indexing_neighbor(f, idx) * weight.unsqueeze(1), dim=-1)
+-    return proj_f
++    dists, idx = three_nn(
++        p2.transpose(1, 2).contiguous(),
++        p1.transpose(1, 2).contiguous()
++    )
++    weight = torch.clamp(1.0 / (dists + 1e-8), max=1e5)
++    weight = weight / weight.sum(dim=2, keepdim=True)
++    return three_interpolate(
++        f.contiguous(), idx.contiguous(), weight.contiguous()
++    ).contiguous()
+ 
+ # Cross-Resolution Transformer
+ class CRT(nn.Module):
+-    def __init__(self, dim_in = 128, is_inter = True, down_rates = [1, 4, 2], knns = [16, 12, 8]):
++    def __init__(self, dim_in = 128, is_inter = True, down_rates = [1, 4, 2], knns = [16, 12, 8], space_dim = 3):
+         super().__init__()
+         self.down_rates = down_rates
+         self.is_inter = is_inter
+         self.num_scale = len(down_rates)
++        self.dim_in = dim_in
+ 
+         self.attn_lists = nn.ModuleList()
+         self.q_mlp_lists = nn.ModuleList()
+         self.s_mlp_lists = nn.ModuleList()
+         for i in range(self.num_scale):
+-            self.attn_lists.append(VectorAttention(in_channel = dim_in, dim = 64, n_knn = knns[i]))
++            self.attn_lists.append(VectorAttention(
++                in_channel = dim_in, dim = dim_in // 2, n_knn = knns[i], space_dim = space_dim
++            ))
+ 
+         for i in range(self.num_scale - 1):
+-            self.q_mlp_lists.append(MLP_Res(in_dim = 128*2, hidden_dim = 128, out_dim = 128))
+-            self.s_mlp_lists.append(MLP_Res(in_dim = 128*2, hidden_dim = 128, out_dim = 128))
++            self.q_mlp_lists.append(MLP_Res(in_dim = dim_in*2, hidden_dim = dim_in, out_dim = dim_in))
++            self.s_mlp_lists.append(MLP_Res(in_dim = dim_in*2, hidden_dim = dim_in, out_dim = dim_in))
+ 
+-    def forward(self, query, support, fps_idxs_q = None, fps_idxs_s = None):
++    def forward(self, query, support, fps_idxs_q = None, fps_idxs_s = None, num_groups = None):
+         pq, fq = query
+         ps, fs = support
+         # prepare fps_idxs_q and fps_idxs_s
+@@ -155,13 +168,13 @@ class CRT(nn.Module):
+                 _f1 = self.q_mlp_lists[i](torch.cat([_f1, proj_f1], dim = 1))
+                 _f2 = self.s_mlp_lists[i](torch.cat([_f2, proj_f2], dim = 1))
+ 
+-            f = self.attn_lists[i]([_pos1, _f1], [_pos2, _f2])
++            f = self.attn_lists[i]([_pos1, _f1], [_pos2, _f2], num_groups=num_groups)
+ 
+             pre_f = f
+             pre_pos = _pos1
+         
+         agg_f = pre_f
+-        return agg_f, fps_idxs_q, fps_idxs_s
++        return agg_f, fps_idxs_q, fps_idxs_s, pre_pos
+ 
+ # encoder
+ class Encoder(nn.Module):
+diff --git a/models/utils.py b/models/utils.py
+index 94caba5..09a37d8 100644
+--- a/models/utils.py
++++ b/models/utils.py
+@@ -10,7 +10,7 @@
+ 
+ import torch
+ from torch import nn, einsum
+-from pointnet2_ops.pointnet2_utils import furthest_point_sample, \
++from hpitd.point_ops import furthest_point_sample, \
+     gather_operation, ball_query, three_nn, three_interpolate, grouping_operation
+ 
+ class Conv1d(nn.Module):

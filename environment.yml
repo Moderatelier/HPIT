@@ -1,0 +1,12 @@
+name: hpitd
+channels:
+  - pytorch
+  - nvidia
+  - conda-forge
+dependencies:
+  - python=3.12
+  - numpy>=2.0,<3
+  - pytorch>=2.4
+  - pip
+  - pip:
+      - -e .

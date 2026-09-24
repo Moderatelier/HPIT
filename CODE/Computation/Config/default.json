@@ -1,0 +1,50 @@
+{
+  "project": {
+    "run_name": "hpitd_baseline",
+    "seed": 121,
+    "device": "auto",
+    "gpu_id": 0,
+    "output_root": "Results/Experiments"
+  },
+  "data": {
+    "train_dir": "Data/Train",
+    "test_dir": "Data/Test",
+    "coordinate_columns": [0, 1, 2],
+    "feature_columns": [10, 11, 12, 13, 14, 15],
+    "target_column": 16,
+    "target_floor": 1e-8,
+    "train_fraction": 0.8,
+    "num_workers": 0
+  },
+  "model": {
+    "space_dim": 3,
+    "feature_dim": 6,
+    "output_dim": 1,
+    "num_layers": 8,
+    "hidden_dim": 128,
+    "dropout": 0.0,
+    "num_heads": 8,
+    "activation": "gelu",
+    "mlp_ratio": 1,
+    "knn_k": 16,
+    "slice_count": 64,
+    "downsample_rates": [1, 4]
+  },
+  "training": {
+    "epochs": 2000,
+    "batch_size_train": 1,
+    "batch_size_validation": 1,
+    "learning_rate": 0.001,
+    "weight_decay": 1e-5,
+    "max_gradient_norm": 0.1,
+    "validation_frequency": 1,
+    "checkpoint_frequency": 100,
+    "best_model_start_epoch": 1301,
+    "scheduler_t_max": 500,
+    "resume": true
+  },
+  "evaluation": {
+    "relative_error_epsilon": 1e-12,
+    "save_predictions": false
+  }
+}

@@ -1,0 +1,30 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite the article listed in preferred-citation."
+title: "Hierarchical Physics-Integrated Transformer for predicting cumulative thermal deformation of ceramic matrix composites"
+type: software
+version: 0.1.0
+authors:
+  - given-names: "Hang"
+    family-names: "Xu"
+    orcid: "https://orcid.org/0000-0002-4587-3943"
+license: GPL-3.0-only
+preferred-citation:
+  type: article
+  title: "Hierarchical Physics-Integrated Transformer for predicting cumulative thermal deformation of ceramic matrix composites"
+  authors:
+    - given-names: "Huanwei"
+      family-names: "Pei"
+    - given-names: "Hang"
+      family-names: "Xu"
+      orcid: "https://orcid.org/0000-0002-4587-3943"
+    - given-names: "Ping"
+      family-names: "Liu"
+    - given-names: "Shenshen"
+      family-names: "Liu"
+    - given-names: "Yanxia"
+      family-names: "Du"
+    - given-names: "Chong"
+      family-names: "Wei"
+    - given-names: "Qi"
+      family-names: "Liu"
+  journal: "Thin-Walled Structures"

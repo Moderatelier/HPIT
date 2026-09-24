@@ -1,0 +1,39 @@
+# Python caches and environments
+__pycache__/
+*.py[cod]
+*.pyd
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+build/
+dist/
+*.egg-info/
+third_party/
+
+# Editors and operating systems
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+
+# Local datasets and generated results
+Data/Train/
+Data/Test/
+Data/**/*.npy
+Data/**/*.npz
+Results/Experiments/
+Results/**/*.pth
+Results/**/*.pt
+Results/**/*.npy
+Results/**/*.npz
+Results/**/*.csv
+Results/**/*.json
+Results/**/*.log
+
+# Keep version-controlled documentation and empty log directory
+!Data/README.md
+!Results/README.md
+!Results/Logs/.gitkeep
